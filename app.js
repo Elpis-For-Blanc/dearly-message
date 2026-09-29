@@ -349,18 +349,18 @@ function consumePushLog() {
 
 async function permission() {
   if (!('Notification' in window)) {
-    toast('이 브라우저는 알림을 지원하지 않아.');
+    toast('이 브라우저는 알림을 지원하지 않아요.');
     return false;
   }
   const p = await Notification.requestPermission();
   renderPermission();
-  toast(p === 'granted' ? '알림을 허용했어.' : '알림 권한이 허용되지 않았어.');
+  toast(p === 'granted' ? '알림을 허용했어요.' : '알림 권한이 허용되지 않았어요.');
   return p === 'granted';
 }
 
 async function test() {
   const pool = state.groups.filter(g => state.characters.find(c => c.id === g.characterId)?.enabled && g.enabled && g.messages?.length);
-  if (!pool.length) return toast('활성 그룹에 대사를 먼저 추가해줘.');
+  if (!pool.length) return toast('활성 그룹에 대사를 먼저 추가해 주세요.');
   if (Notification.permission !== 'granted' && !await permission()) return;
   const g = pool[Math.floor(Math.random() * pool.length)];
   await notify(g, chooseMessage(g));
@@ -369,7 +369,7 @@ async function test() {
 async function checkDue(manual = false) {
   const gs = eligibleGroups();
   if (!gs.length) {
-    if (manual) toast('지금 시간대에 보낼 수 있는 그룹이 없어.');
+    if (manual) toast('지금 시간대에 보낼 수 있는 그룹이 없어요.');
     return;
   }
   if (Notification.permission !== 'granted') {
@@ -378,7 +378,7 @@ async function checkDue(manual = false) {
   }
   const g = gs[Math.floor(Math.random() * gs.length)];
   await notify(g, chooseMessage(g));
-  if (manual) toast(`${g.name} 그룹에서 골랐어.`);
+  if (manual) toast(`${g.name} 그룹에서 선택했어요.`);
 }
 
 function startTimer() {
@@ -405,13 +405,13 @@ function groupCard(g, editable) {
 function renderHome() {
   const c = selectedChar();
   avatarInto($('#homeAvatar'), $('#avatarFallback'), c);
-  $('#homeName').textContent = c?.name || '이름을 설정해줘';
+  $('#homeName').textContent = c?.name || '이름을 설정해 주세요.';
   const active = charGroups(c?.id).filter(g => g.enabled && g.messages?.length);
-  $('#nextSummary').textContent = active.length ? `${active.length}개 그룹이 활성화되어 있어.` : '활성화된 메시지 그룹이 아직 없어.';
+  $('#nextSummary').textContent = active.length ? `${active.length}개 그룹이 활성화되어 있어요.` : '활성화된 메시지 그룹이 아직 없어요.';
   const b = $('#homeGroupList');
   b.innerHTML = '';
   active.forEach(g => b.appendChild(groupCard(g, false)));
-  if (!active.length) b.innerHTML = '<div class="empty">메시지 그룹에 대사를 추가하고 활성화해줘.</div>';
+  if (!active.length) b.innerHTML = '<div class="empty">메시지 그룹에 대사를 추가하고 활성화해 주세요.</div>';
 }
 function renderCharacters() {
   const b = $('#characterList');
@@ -429,7 +429,7 @@ function renderGroups() {
   const b = $('#groupEditorList');
   b.innerHTML = '';
   charGroups(c?.id).forEach(g => b.appendChild(groupCard(g, true)));
-  if (!b.children.length) b.innerHTML = '<div class="empty">아직 그룹이 없어. 첫 그룹을 만들어봐.</div>';
+  if (!b.children.length) b.innerHTML = '<div class="empty">아직 그룹이 없어요. 첫 그룹을 만들어 주세요.</div>';
 }
 function renderHistory() {
   const b = $('#historyList');
@@ -440,7 +440,7 @@ function renderHistory() {
     e.innerHTML = `<div class="history-time">${d.toLocaleDateString('ko-KR')}<br>${d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</div><div><div class="history-message">${esc(h.message)}</div><div class="history-group">${esc(h.characterName || '')} · ${esc(h.groupName || '')}</div></div>`;
     b.appendChild(e);
   });
-  if (!state.history.length) b.innerHTML = '<div class="empty">아직 받은 메시지가 없어.</div>';
+  if (!state.history.length) b.innerHTML = '<div class="empty">아직 받은 메시지가 없어요.</div>';
 }
 function renderSettings() {
   $('#avoidRecent').checked = !!state.settings.avoidRecent;
@@ -586,11 +586,11 @@ function queueCloudSync() {
 }
 
 async function syncPush() {
-  if (!('serviceWorker' in navigator)) return toast('이 브라우저에서는 알림 연결을 지원하지 않아.');
+  if (!('serviceWorker' in navigator)) return toast('이 브라우저에서는 알림 연결을 지원하지 않아요.');
   if (!await permission()) return;
   try {
     const { messaging } = await ensureFirebase();
-    if (!messaging) return toast('이 브라우저에서는 알림 연결을 사용할 수 없어.');
+    if (!messaging) return toast('이 브라우저에서는 알림 연결을 사용할 수 없어요.');
     const reg = await navigator.serviceWorker.ready;
 
     const fidPromise = new Promise(resolve => {
@@ -615,10 +615,10 @@ async function syncPush() {
     persist();
     await syncDeviceToFirestore();
     startTimer();
-    toast('알림을 연결했어.');
+    toast('알림을 연결했어요.');
   } catch (e) {
     console.error(e);
-    toast('알림 연결에 실패했어. 잠시 뒤 다시 시도해줘.');
+    toast('알림 연결에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
   }
 }
 
@@ -631,10 +631,10 @@ async function unsubscribePush() {
     state.push.connected = false;
     persist();
     startTimer();
-    toast('알림 연결을 해제했어.');
+    toast('알림 연결을 해제했어요.');
   } catch (e) {
     console.error(e);
-    toast('연결 해제 중 오류가 났어.');
+    toast('연결 해제 중 오류가 발생했어요.');
   }
 }
 
@@ -651,13 +651,13 @@ $('#addGroupBtn').onclick = () => openGroup();
 $('#avatarFile').onchange = async e => {
   const f = e.target.files?.[0];
   if (!f) return;
-  if (f.size > 10 * 1024 * 1024) return toast('이미지는 10MB 이하로 선택해줘.');
+  if (f.size > 10 * 1024 * 1024) return toast('이미지는 10MB 이하로 선택해 주세요.');
   try {
     pendingAvatar = await squareAvatarFromFile(f, 256);
     renderAvatarPreview();
   } catch (err) {
     console.error(err);
-    toast('프로필 이미지를 불러오지 못했어.');
+    toast('프로필 이미지를 불러오지 못했어요.');
   }
 };
 
@@ -679,7 +679,7 @@ $('#characterForm').onsubmit = e => {
   if (savedCharacter?.avatar?.startsWith('data:image/')) cacheAvatar(savedCharacter.id, savedCharacter.avatar);
   else if (savedCharacter) removeCachedAvatar(savedCharacter.id);
   $('#characterDialog').close();
-  toast('캐릭터를 저장했어.');
+  toast('캐릭터를 저장했어요.');
 };
 
 $('#characterList').onclick = e => {
@@ -687,9 +687,9 @@ $('#characterList').onclick = e => {
   if (s) { state.selectedCharacterId = s; persist(); }
   if (ed) openCharacter(state.characters.find(c => c.id === ed));
   if (del) {
-    if (state.characters.length === 1) return toast('캐릭터는 최소 한 명 필요해.');
+    if (state.characters.length === 1) return toast('캐릭터는 최소 한 명 필요해요.');
     const c = state.characters.find(x => x.id === del);
-    if (confirm(`“${c.name || '이 캐릭터'}”와 연결된 메시지 그룹도 삭제할까?`)) {
+    if (confirm(`“${c.name || '이 캐릭터'}”와 연결된 메시지 그룹도 삭제할까요?`)) {
       state.characters = state.characters.filter(x => x.id !== del);
       state.groups = state.groups.filter(g => g.characterId !== del);
       if (state.selectedCharacterId === del) state.selectedCharacterId = state.characters[0].id;
@@ -701,7 +701,7 @@ $('#characterList').onclick = e => {
 $('#groupForm').onsubmit = e => {
   e.preventDefault();
   const ms = $('#messages').value.split('\n').map(v => v.trim()).filter(Boolean);
-  if (!ms.length) return toast('대사를 한 개 이상 입력해줘.');
+  if (!ms.length) return toast('대사를 한 개 이상 입력해 주세요.');
   const id = $('#groupId').value;
   const d = {
     id: id || uid(), characterId: state.selectedCharacterId,
@@ -715,7 +715,7 @@ $('#groupForm').onsubmit = e => {
   } else state.groups.push(d);
   persist();
   $('#groupDialog').close();
-  toast('저장했어.');
+  toast('저장했어요.');
 };
 
 $('#groupEditorList').onclick = async e => {
@@ -723,21 +723,21 @@ $('#groupEditorList').onclick = async e => {
   if (ed) openGroup(state.groups.find(g => g.id === ed));
   if (del) {
     const g = state.groups.find(x => x.id === del);
-    if (confirm(`“${g.name}” 그룹을 삭제할까?`)) {
+    if (confirm(`“${g.name}” 그룹을 삭제할까요?`)) {
       state.groups = state.groups.filter(x => x.id !== del);
       persist();
     }
   }
   if (p) {
     const g = state.groups.find(x => x.id === p);
-    if (!g.messages.length) return toast('대사를 먼저 추가해줘.');
+    if (!g.messages.length) return toast('대사를 먼저 추가해 주세요.');
     if (Notification.permission !== 'granted' && !await permission()) return;
     await notify(g, chooseMessage(g));
   }
 };
 
 $('#clearHistoryBtn').onclick = () => {
-  if (confirm('받은 메시지 기록을 모두 비울까?')) { state.history = []; persist(); }
+  if (confirm('받은 메시지 기록을 모두 비울까요?')) { state.history = []; persist(); }
 };
 $('#avoidRecent').onchange = e => { state.settings.avoidRecent = e.target.checked; persist(); };
 $('#recentCount').onchange = e => { state.settings.recentCount = Math.max(0, Math.min(20, +e.target.value || 0)); persist(); };
@@ -758,8 +758,8 @@ $('#importFile').onchange = e => {
   if (!f) return;
   const r = new FileReader();
   r.onload = () => {
-    try { state = normalize(JSON.parse(r.result)); persist(); startTimer(); toast('백업을 가져왔어.'); }
-    catch { toast('올바른 백업 파일이 아니야.'); }
+    try { state = normalize(JSON.parse(r.result)); persist(); startTimer(); toast('백업을 가져왔어요.'); }
+    catch { toast('올바른 백업 파일이 아니에요.'); }
   };
   r.readAsText(f);
 };
