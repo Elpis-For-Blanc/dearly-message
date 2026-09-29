@@ -463,6 +463,53 @@ function openCharacter(c = null) {
   $('#characterDialog').showModal();
 }
 function renderAvatarPreview() { $('#avatarPreviewWrap').innerHTML = pendingAvatar ? `<img src="${pendingAvatar}" alt="프로필 미리보기">` : ''; }
+
+function makeMessageRow(value = '') {
+  const row = document.createElement('div');
+  row.className = 'message-input-row';
+  row.innerHTML = `
+    <span class="message-row-number" aria-hidden="true"></span>
+    <input class="message-line-input" type="text" maxlength="500" placeholder="보낼 대사를 입력해 주세요." value="${esc(value)}">
+    <button type="button" class="message-remove-btn" aria-label="대사 삭제">×</button>
+  `;
+  return row;
+}
+
+function refreshMessageRowNumbers() {
+  $$('#messageInputs .message-input-row').forEach((row, i) => {
+    const n = row.querySelector('.message-row-number');
+    if (n) n.textContent = String(i + 1);
+  });
+}
+
+function addMessageRow(value = '', focus = false, afterRow = null) {
+  const list = $('#messageInputs');
+  const row = makeMessageRow(value);
+
+  if (afterRow && afterRow.parentElement === list) {
+    afterRow.insertAdjacentElement('afterend', row);
+  } else {
+    list.appendChild(row);
+  }
+
+  refreshMessageRowNumbers();
+  if (focus) row.querySelector('.message-line-input')?.focus();
+  return row;
+}
+
+function setMessageRows(messages = []) {
+  const list = $('#messageInputs');
+  list.innerHTML = '';
+  const values = Array.isArray(messages) && messages.length ? messages : [''];
+  values.forEach(v => addMessageRow(v));
+}
+
+function getMessageRows() {
+  return $$('#messageInputs .message-line-input')
+    .map(input => input.value.trim())
+    .filter(Boolean);
+}
+
 function openGroup(g = null) {
   $('#groupId').value = g?.id || '';
   $('#dialogTitle').textContent = g ? '그룹 편집' : '그룹 추가';
@@ -470,7 +517,7 @@ function openGroup(g = null) {
   $('#startTime').value = g?.start || '07:00';
   $('#endTime').value = g?.end || '10:00';
   $('#dailyCount').value = String(g?.dailyCount || 1);
-  $('#messages').value = (g?.messages || []).join('\n');
+  setMessageRows(g?.messages || []);
   $('#groupEnabled').checked = g ? !!g.enabled : true;
   $('#groupDialog').showModal();
 }
@@ -648,6 +695,74 @@ $('#runDueBtn').onclick = () => checkDue(true);
 $('#addCharacterBtn').onclick = () => openCharacter();
 $('#addGroupBtn').onclick = () => openGroup();
 
+
+$('#addMessageBtn').onclick = () => addMessageRow('', true);
+
+$('#messageInputs').onclick = e => {
+  const btn = e.target.closest('.message-remove-btn');
+  if (!btn) return;
+
+  const rows = $$('#messageInputs .message-input-row');
+  const row = btn.closest('.message-input-row');
+
+  if (rows.length <= 1) {
+    const input = row?.querySelector('.message-line-input');
+    if (input) {
+      input.value = '';
+      input.focus();
+    }
+    return;
+  }
+
+  const nextFocus = row?.nextElementSibling?.querySelector('.message-line-input')
+    || row?.previousElementSibling?.querySelector('.message-line-input');
+  row?.remove();
+  refreshMessageRowNumbers();
+  nextFocus?.focus();
+};
+
+$('#messageInputs').onkeydown = e => {
+  const input = e.target.closest('.message-line-input');
+  if (!input) return;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addMessageRow('', true, input.closest('.message-input-row'));
+    return;
+  }
+
+  if (e.key === 'Backspace' && !input.value) {
+    const row = input.closest('.message-input-row');
+    const rows = $$('#messageInputs .message-input-row');
+    if (rows.length <= 1) return;
+    const prev = row?.previousElementSibling?.querySelector('.message-line-input');
+    row?.remove();
+    refreshMessageRowNumbers();
+    prev?.focus();
+  }
+};
+
+$('#messageInputs').onpaste = e => {
+  const input = e.target.closest('.message-line-input');
+  if (!input) return;
+
+  const text = e.clipboardData?.getData('text') || '';
+  const lines = text.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+  if (lines.length <= 1) return;
+
+  e.preventDefault();
+
+  const row = input.closest('.message-input-row');
+  input.value = lines[0];
+
+  let cursor = row;
+  lines.slice(1).forEach(line => {
+    cursor = addMessageRow(line, false, cursor);
+  });
+
+  cursor?.querySelector('.message-line-input')?.focus();
+};
+
 $('#avatarFile').onchange = async e => {
   const f = e.target.files?.[0];
   if (!f) return;
@@ -700,7 +815,7 @@ $('#characterList').onclick = e => {
 
 $('#groupForm').onsubmit = e => {
   e.preventDefault();
-  const ms = $('#messages').value.split('\n').map(v => v.trim()).filter(Boolean);
+  const ms = getMessageRows();
   if (!ms.length) return toast('대사를 한 개 이상 입력해 주세요.');
   const id = $('#groupId').value;
   const d = {
