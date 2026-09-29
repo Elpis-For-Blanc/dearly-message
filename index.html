@@ -25,43 +25,136 @@
   <div id="messageInputs" class="message-input-list"></div>
   <p class="message-editor-tip">Enter를 누르면 다음 대사 칸이 바로 추가돼요.</p>
 </div><label class="switch-row"><span>이 그룹 사용</span><input id="groupEnabled" type="checkbox" checked></label><div class="dialog-actions"><button type="button" class="ghost-btn" data-close="groupDialog">취소</button><button class="primary-btn" type="submit">저장</button></div></form></dialog>
-<dialog id="oocDialog"><form method="dialog" class="dialog-form ooc-dialog-form"><div class="dialog-head"><div><p class="eyebrow">AI CHAT OOC</p><h3>AI 채팅용 OOC</h3></div><button type="button" class="icon-btn" data-close="oocDialog">×</button></div><p class="ooc-guide">아래 내용은 기본 예시입니다. 캐릭터와 관계에 맞게 수정해서 자유롭게 사용하셔도 됩니다.</p><textarea id="oocText" class="ooc-textarea" spellcheck="false"></textarea><div class="ooc-meta"><span>아침 · 점심 · 저녁 · 밤 · 새벽 · 추울 때 · 더울 때 · 비가 오는 날</span><strong>각 10개</strong></div><div class="dialog-actions"><button type="button" id="resetOocBtn" class="ghost-btn">기본값으로 되돌리기</button><button type="button" id="copyOocBtn" class="primary-btn">OOC 복사하기</button></div></form></dialog>
+<dialog id="oocDialog">
+  <div class="dialog-form ooc-dialog-form">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">AI CHAT OOC</p>
+        <h3>AI 채팅용 OOC</h3>
+      </div>
+      <button type="button" class="icon-btn" id="closeOocBtn" aria-label="닫기">×</button>
+    </div>
+
+    <p class="ooc-guide">
+      아래 내용은 기본 예시입니다. 캐릭터와 관계에 맞게 자유롭게 수정해서 사용하셔도 됩니다.
+      종류별로 따로 복사할 수 있으며, 각 OOC는 해당 상황의 짧은 문자 메시지를 10개 이상 작성하도록 요청합니다.
+    </p>
+
+    <div id="oocCategoryList" class="ooc-category-list"></div>
+
+    <div class="dialog-actions ooc-footer-actions">
+      <button type="button" id="resetOocBtn" class="ghost-btn">기본값으로 되돌리기</button>
+      <button type="button" id="copyAllOocBtn" class="primary-btn">전체 OOC 복사하기</button>
+    </div>
+  </div>
+</dialog>
 <div id="toast" class="toast" role="status"></div>
 <script>
 (() => {
-  const DEFAULT_OOC = `[OOC]
-캐릭터의 기존 성격, 말투, 관계, 호칭, 설정을 유지한 채 Dearly Message에 넣을 짧은 문자 메시지를 작성해 주세요.
-
-아래 상황별로 각각 10개씩 작성해 주세요.
-1. 아침
-2. 점심
-3. 저녁
-4. 밤
-5. 새벽
-6. 추울 때
-7. 더울 때
-8. 비가 오는 날
-
-작성 규칙
-- 각 메시지는 실제 메신저나 문자처럼 자연스럽고 간략하게 작성해 주세요.
-- 한 메시지는 1~2문장 정도로 짧게 작성해 주세요.
-- 상황 설명이나 행동 서술 없이, 캐릭터가 상대에게 직접 보내는 메시지만 작성해 주세요.
-- 같은 문장이나 표현이 반복되지 않도록 해 주세요.
-- 지나치게 문학적이거나 장황한 서술은 피하고 캐릭터의 평소 말투와 관계성을 가장 우선해 주세요.
-- 각 상황은 제목을 붙이고 1~10번으로 구분해 주세요.
-- 이모티콘, 말줄임표, 애칭 등은 해당 캐릭터가 평소 사용하는 경우에만 자연스럽게 사용해 주세요.
-- 결과에는 메시지 외의 해설이나 추가 설명을 붙이지 말아 주세요.
-[/OOC]`;
+  const OOC_CATEGORIES = [
+    { key: 'morning', label: '아침' },
+    { key: 'lunch', label: '점심' },
+    { key: 'evening', label: '저녁' },
+    { key: 'night', label: '밤' },
+    { key: 'dawn', label: '새벽' },
+    { key: 'cold', label: '추울 때' },
+    { key: 'hot', label: '더울 때' },
+    { key: 'rain', label: '비가 오는 날' }
+  ];
 
   const byId = id => document.getElementById(id);
 
-  function openOocFallback() {
+  function getCharacterName() {
+    try {
+      const raw = localStorage.getItem('dear-message-v2');
+      if (raw) {
+        const data = JSON.parse(raw);
+        const selected = data.characters?.find(c => c.id === data.selectedCharacterId) || data.characters?.[0];
+        if (selected?.name?.trim()) return selected.name.trim();
+      }
+    } catch (_) {}
+    return '캐릭터';
+  }
+
+  function makePrompt(label) {
+    const name = getCharacterName();
+    return `[OOC]
+${name}의 기존 성격, 말투, 관계, 호칭, 설정을 유지해 주세요.
+
+상황: ${label}
+
+Dearly Message에 넣어 사용할 수 있는 짧은 문자 메시지를 10개 이상 작성해 주세요.
+
+작성 규칙
+- 실제 메신저나 문자처럼 자연스럽고 간략하게 작성해 주세요.
+- 각 메시지는 1~2문장 정도로 짧게 작성해 주세요.
+- 상황 설명이나 행동 서술은 넣지 말고, 캐릭터가 상대에게 직접 보내는 문자 내용만 작성해 주세요.
+- ${label} 상황에 자연스럽게 어울리는 내용으로 작성해 주세요.
+- 같은 문장이나 비슷한 표현이 반복되지 않도록 다양하게 작성해 주세요.
+- 캐릭터의 평소 말투와 상대와의 관계성을 가장 우선해 주세요.
+- 지나치게 문학적이거나 장황한 문장은 피해주세요.
+- 이모티콘, 말줄임표, 애칭 등은 해당 캐릭터가 평소 사용하는 경우에만 자연스럽게 사용해 주세요.
+- 결과는 1번부터 번호를 붙여 최소 10개 이상 작성해 주세요.
+- 메시지 외의 해설이나 추가 설명은 붙이지 말아 주세요.
+[/OOC]`;
+  }
+
+  function renderOocCategories(reset = false) {
+    const list = byId('oocCategoryList');
+    if (!list) return;
+
+    if (!reset && list.children.length) return;
+    list.innerHTML = '';
+
+    OOC_CATEGORIES.forEach(cat => {
+      const section = document.createElement('section');
+      section.className = 'ooc-category-card';
+      section.dataset.category = cat.key;
+
+      const head = document.createElement('div');
+      head.className = 'ooc-category-head';
+
+      const titleWrap = document.createElement('div');
+      titleWrap.innerHTML = `<strong>${cat.label}</strong><small>10개 이상</small>`;
+
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'mini-btn ooc-copy-one';
+      copyBtn.textContent = `${cat.label} 복사`;
+      copyBtn.dataset.copyCategory = cat.key;
+
+      head.append(titleWrap, copyBtn);
+
+      const ta = document.createElement('textarea');
+      ta.className = 'ooc-category-text';
+      ta.spellcheck = false;
+      ta.dataset.oocCategory = cat.key;
+      ta.value = makePrompt(cat.label);
+
+      section.append(head, ta);
+      list.appendChild(section);
+    });
+  }
+
+  async function copyText(text, textarea) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      try {
+        textarea?.focus();
+        textarea?.select();
+        return document.execCommand('copy');
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  function openOoc() {
     const dialog = byId('oocDialog');
-    const text = byId('oocText');
-    if (!dialog || !text) return;
-
-    if (!text.value.trim()) text.value = DEFAULT_OOC;
-
+    renderOocCategories(false);
+    if (!dialog) return;
     if (!dialog.open) {
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', '');
@@ -69,36 +162,49 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    const openBtn = byId('oocBtn');
-    const resetBtn = byId('resetOocBtn');
-    const copyBtn = byId('copyOocBtn');
-    const dialog = byId('oocDialog');
+    byId('oocBtn')?.addEventListener('click', openOoc);
 
-    openBtn?.addEventListener('click', openOocFallback);
-
-    resetBtn?.addEventListener('click', () => {
-      const text = byId('oocText');
-      if (text) text.value = DEFAULT_OOC;
+    byId('closeOocBtn')?.addEventListener('click', () => {
+      const dialog = byId('oocDialog');
+      if (typeof dialog?.close === 'function') dialog.close();
+      else dialog?.removeAttribute('open');
     });
 
-    copyBtn?.addEventListener('click', async () => {
-      const text = byId('oocText');
-      if (!text?.value.trim()) return;
-
-      try {
-        await navigator.clipboard.writeText(text.value);
-      } catch (_) {
-        text.focus();
-        text.select();
-        try { document.execCommand('copy'); } catch (_) {}
-      }
+    byId('resetOocBtn')?.addEventListener('click', () => {
+      renderOocCategories(true);
     });
 
-    dialog?.querySelectorAll('[data-close="oocDialog"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (typeof dialog.close === 'function') dialog.close();
-        else dialog.removeAttribute('open');
-      });
+    byId('oocCategoryList')?.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-copy-category]');
+      if (!btn) return;
+
+      const key = btn.dataset.copyCategory;
+      const ta = document.querySelector(`[data-ooc-category="${key}"]`);
+      if (!ta?.value.trim()) return;
+
+      const ok = await copyText(ta.value.trim(), ta);
+      const original = btn.textContent;
+      btn.textContent = ok ? '복사됨 ✓' : '직접 복사해 주세요';
+      setTimeout(() => btn.textContent = original, 1400);
+    });
+
+    byId('copyAllOocBtn')?.addEventListener('click', async () => {
+      const boxes = [...document.querySelectorAll('.ooc-category-text')];
+      if (!boxes.length) renderOocCategories(false);
+
+      const all = OOC_CATEGORIES.map(cat => {
+        const ta = document.querySelector(`[data-ooc-category="${cat.key}"]`);
+        return ta?.value.trim() || '';
+      }).filter(Boolean).join('
+
+');
+
+      if (!all) return;
+      const ok = await copyText(all, document.querySelector('.ooc-category-text'));
+      const btn = byId('copyAllOocBtn');
+      const original = btn.textContent;
+      btn.textContent = ok ? '전체 복사됨 ✓' : '직접 복사해 주세요';
+      setTimeout(() => btn.textContent = original, 1400);
     });
   });
 })();

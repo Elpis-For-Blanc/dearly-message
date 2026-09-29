@@ -186,3 +186,78 @@ button,input,textarea,select{font:inherit} button{cursor:pointer}.app-shell{widt
     align-items:flex-start;
   }
 }
+
+
+/* OOC 종류별 개별 복사 */
+.ooc-category-list{
+  display:grid;
+  gap:12px;
+  max-height:58vh;
+  overflow:auto;
+  padding:2px 2px 4px;
+}
+.ooc-category-card{
+  border:1px solid #f1dbe5;
+  border-radius:15px;
+  background:#fffafd;
+  padding:12px;
+}
+.ooc-category-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:9px;
+}
+.ooc-category-head>div{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+}
+.ooc-category-head strong{
+  font-size:14px;
+}
+.ooc-category-head small{
+  color:#a7567d;
+  font-size:11px;
+  font-weight:800;
+}
+.ooc-category-text{
+  width:100%;
+  min-height:230px;
+  resize:vertical;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fff;
+  color:var(--text);
+  padding:12px;
+  font:inherit;
+  font-size:12.5px;
+  line-height:1.65;
+  outline:none;
+}
+.ooc-category-text:focus{
+  border-color:#df7eaa;
+  box-shadow:0 0 0 3px #fde7f1;
+}
+.ooc-footer-actions{
+  position:sticky;
+  bottom:0;
+  padding-top:12px;
+  background:linear-gradient(to bottom, rgba(255,255,255,0), #fff 28%);
+}
+@media(max-width:700px){
+  .ooc-category-list{
+    max-height:62vh;
+  }
+  .ooc-category-text{
+    min-height:250px;
+    font-size:12px;
+  }
+  .ooc-category-head{
+    align-items:center;
+  }
+  .ooc-copy-one{
+    flex:0 0 auto;
+  }
+}
