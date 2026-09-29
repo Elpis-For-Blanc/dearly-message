@@ -32,17 +32,41 @@ const makeDefaults = () => {
     characters: [{ id: cid, name: '', avatar: '', enabled: true }],
     selectedCharacterId: cid,
     groups: [
-      ['아침', '07:00', '10:00', true],
-      ['점심', '11:30', '14:00', false],
-      ['저녁', '18:00', '21:00', false],
-      ['밤', '22:00', '01:00', false],
-    ].map(x => ({
-      id: uid(), characterId: cid, name: x[0], start: x[1], end: x[2],
-      dailyCount: 1, enabled: x[3], messages: [], sentToday: [],
-    })),
+      ...[
+        ['아침', '07:00', '10:00', true],
+        ['점심', '11:30', '14:00', false],
+        ['저녁', '18:00', '21:00', false],
+        ['밤', '22:00', '01:00', false],
+      ].map(x => ({
+        id: uid(), characterId: cid, name: x[0], triggerType: 'time',
+        start: x[1], end: x[2], dailyCount: 1, enabled: x[3],
+        messages: [], sentToday: [],
+      })),
+      ...[
+        ['추울 때', 'cold'],
+        ['더울 때', 'hot'],
+        ['비가 오는 날', 'rain'],
+      ].map(x => ({
+        id: uid(), characterId: cid, name: x[0], triggerType: 'weather',
+        weatherCondition: x[1], start: '', end: '', dailyCount: 1,
+        enabled: false, messages: [], sentToday: [],
+      })),
+    ],
     history: [],
     recentMessages: [],
-    settings: { avoidRecent: true, recentCount: 3, checkInterval: 5, timezone: 'Asia/Seoul' },
+    settings: {
+      avoidRecent: true,
+      recentCount: 3,
+      checkInterval: 5,
+      timezone: 'Asia/Seoul',
+      weather: {
+        latitude: null,
+        longitude: null,
+        locationUpdatedAt: 0,
+        coldThreshold: 5,
+        hotThreshold: 28,
+      },
+    },
     push: {
       deviceId: localStorage.getItem('dearMessageDeviceId') || uid(),
       connected: false,
@@ -75,23 +99,104 @@ function migrateV1(v1) {
   return d;
 }
 
+
+function weatherGroupDefaults(characterId) {
+  return [
+    ['추울 때', 'cold'],
+    ['더울 때', 'hot'],
+    ['비가 오는 날', 'rain'],
+  ].map(([name, condition]) => ({
+    id: uid(),
+    characterId,
+    name,
+    triggerType: 'weather',
+    weatherCondition: condition,
+    start: '',
+    end: '',
+    dailyCount: 1,
+    enabled: false,
+    messages: [],
+    sentToday: [],
+  }));
+}
+
+function normalizeGroup(g) {
+  const triggerType = g?.triggerType === 'weather' ? 'weather' : 'time';
+  return {
+    ...g,
+    triggerType,
+    weatherCondition: triggerType === 'weather'
+      ? (['cold', 'hot', 'rain'].includes(g?.weatherCondition) ? g.weatherCondition : 'cold')
+      : '',
+    start: triggerType === 'time' ? (g?.start || '07:00') : '',
+    end: triggerType === 'time' ? (g?.end || '10:00') : '',
+    dailyCount: triggerType === 'weather' ? 1 : Math.max(1, Math.min(3, Number(g?.dailyCount || 1))),
+    enabled: !!g?.enabled,
+    messages: Array.isArray(g?.messages) ? g.messages : [],
+    sentToday: Array.isArray(g?.sentToday) ? g.sentToday : [],
+  };
+}
+
+function withWeatherDefaults(characters, groups) {
+  const out = groups.map(normalizeGroup);
+  for (const c of characters) {
+    for (const template of weatherGroupDefaults(c.id)) {
+      const exists = out.some(g =>
+        g.characterId === c.id &&
+        g.triggerType === 'weather' &&
+        g.weatherCondition === template.weatherCondition
+      );
+      if (!exists) out.push(template);
+    }
+  }
+  return out;
+}
+
+function normalizedWeatherSettings(settings) {
+  const w = settings?.weather || {};
+  const lat = Number(w.latitude);
+  const lon = Number(w.longitude);
+  return {
+    latitude: Number.isFinite(lat) ? lat : null,
+    longitude: Number.isFinite(lon) ? lon : null,
+    locationUpdatedAt: Number(w.locationUpdatedAt || 0),
+    coldThreshold: Math.max(-30, Math.min(20, Number(w.coldThreshold ?? 5))),
+    hotThreshold: Math.max(15, Math.min(45, Number(w.hotThreshold ?? 28))),
+  };
+}
+
 function normalize(s) {
   const d = makeDefaults();
   if (s?.version === 2 && Array.isArray(s.characters)) {
     const push = { ...d.push, ...s.push };
-    // 기존 Supabase판의 connected=true가 남아 있어도 Firebase FID가 없으면 새 연결로 취급.
     if (!push.fid) push.connected = false;
+
+    const characters = s.characters.length ? s.characters : d.characters;
+    const settings = {
+      ...d.settings,
+      ...(s.settings || {}),
+      weather: normalizedWeatherSettings(s.settings),
+    };
+    const sourceGroups = Array.isArray(s.groups) ? s.groups : d.groups;
+
     return {
       ...d,
       ...s,
-      settings: { ...d.settings, ...s.settings },
+      settings,
       push,
-      characters: s.characters.length ? s.characters : d.characters,
-      groups: Array.isArray(s.groups) ? s.groups : d.groups,
+      characters,
+      groups: withWeatherDefaults(characters, sourceGroups),
       history: Array.isArray(s.history) ? s.history : [],
     };
   }
-  return migrateV1(s || {});
+
+  const migrated = migrateV1(s || {});
+  migrated.settings = {
+    ...migrated.settings,
+    weather: normalizedWeatherSettings(migrated.settings),
+  };
+  migrated.groups = withWeatherDefaults(migrated.characters, migrated.groups);
+  return migrated;
 }
 
 function loadState() {
@@ -138,7 +243,7 @@ function eligibleGroups() {
   resetDailyIfNeeded();
   return state.groups.filter(g => {
     const c = state.characters.find(x => x.id === g.characterId);
-    return c?.enabled && g.enabled && g.messages?.length && inWindow(g.start, g.end) && (g.sentToday?.length || 0) < Number(g.dailyCount || 1);
+    return c?.enabled && g.triggerType !== 'weather' && g.enabled && g.messages?.length && inWindow(g.start, g.end) && (g.sentToday?.length || 0) < Number(g.dailyCount || 1);
   });
 }
 function chooseMessage(g) {
@@ -396,10 +501,26 @@ function avatarInto(img, fb, c) {
   if (c?.avatar) { img.src = c.avatar; img.hidden = false; fb.hidden = true; }
   else { img.hidden = true; fb.hidden = false; }
 }
+function weatherConditionLabel(condition) {
+  return ({ cold: '추울 때', hot: '더울 때', rain: '비가 오는 날' })[condition] || '날씨';
+}
+
+function weatherConditionMeta(condition) {
+  const w = state.settings.weather || {};
+  if (condition === 'cold') return `체감 ${Number(w.coldThreshold ?? 5)}℃ 이하`;
+  if (condition === 'hot') return `체감 ${Number(w.hotThreshold ?? 28)}℃ 이상`;
+  if (condition === 'rain') return '비 감지 시';
+  return '날씨 조건';
+}
+
 function groupCard(g, editable) {
   const el = document.createElement('div');
   el.className = editable ? 'editor-card' : 'group-card';
-  el.innerHTML = `<div class="group-main"><div class="group-title"><span class="status-dot ${g.enabled ? '' : 'off'}"></span>${esc(g.name)}</div><div class="group-meta">${g.start} ~ ${g.end} · 하루 ${g.dailyCount}회 · 대사 ${g.messages?.length || 0}개</div></div>${editable ? `<div class="editor-actions"><button class="mini-btn" data-preview="${g.id}">미리보기</button><button class="mini-btn" data-edit="${g.id}">편집</button><button class="mini-btn danger" data-delete="${g.id}">삭제</button></div>` : ''}`;
+  const isWeather = g.triggerType === 'weather';
+  const meta = isWeather
+    ? `날씨 · ${weatherConditionMeta(g.weatherCondition)} · 하루 1회 · 대사 ${g.messages?.length || 0}개`
+    : `${g.start} ~ ${g.end} · 하루 ${g.dailyCount}회 · 대사 ${g.messages?.length || 0}개`;
+  el.innerHTML = `<div class="group-main"><div class="group-title"><span class="status-dot ${g.enabled ? '' : 'off'}"></span>${esc(g.name)}</div><div class="group-meta">${meta}</div></div>${editable ? `<div class="editor-actions"><button class="mini-btn" data-preview="${g.id}">미리보기</button><button class="mini-btn" data-edit="${g.id}">편집</button><button class="mini-btn danger" data-delete="${g.id}">삭제</button></div>` : ''}`;
   return el;
 }
 function renderHome() {
@@ -447,9 +568,28 @@ function renderSettings() {
   $('#recentCount').value = state.settings.recentCount;
   $('#checkInterval').value = String(state.settings.checkInterval);
   $('#timezone').value = state.settings.timezone || 'Asia/Seoul';
-  const e = $('#pushState');
-  e.textContent = state.push.connected ? '이 기기 알림 연결됨' : '연결 안 됨';
-  e.className = state.push.connected ? 'muted ok' : 'muted';
+
+  const pushState = $('#pushState');
+  pushState.textContent = state.push.connected ? '이 기기 알림 연결됨' : '연결 안 됨';
+  pushState.className = state.push.connected ? 'muted ok' : 'muted';
+
+  const weather = state.settings.weather || {};
+  $('#coldThreshold').value = Number(weather.coldThreshold ?? 5);
+  $('#hotThreshold').value = Number(weather.hotThreshold ?? 28);
+
+  const locationState = $('#locationState');
+  const hasLocation = Number.isFinite(Number(weather.latitude)) && Number.isFinite(Number(weather.longitude));
+  if (hasLocation) {
+    const updated = Number(weather.locationUpdatedAt || 0);
+    const when = updated
+      ? new Date(updated).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    locationState.textContent = `현재 위치가 저장되어 있어요.${when ? ` · ${when} 갱신` : ''}`;
+    locationState.className = 'muted ok';
+  } else {
+    locationState.textContent = '현재 위치가 저장되지 않았어요.';
+    locationState.className = 'muted';
+  }
 }
 function renderAll() { renderPermission(); renderHome(); renderCharacters(); renderGroups(); renderHistory(); renderSettings(); }
 function openCharacter(c = null) {
@@ -709,15 +849,30 @@ function getMessageRows() {
     .filter(Boolean);
 }
 
+function renderTriggerFields() {
+  const type = $('#triggerType').value;
+  const weather = type === 'weather';
+  $('#timeTriggerFields').hidden = weather;
+  $('#weatherTriggerFields').hidden = !weather;
+
+  if (weather) {
+    const condition = $('#weatherCondition').value;
+    $('#weatherConditionHint').textContent = weatherConditionMeta(condition);
+  }
+}
+
 function openGroup(g = null) {
   $('#groupId').value = g?.id || '';
   $('#dialogTitle').textContent = g ? '그룹 편집' : '그룹 추가';
   $('#groupName').value = g?.name || '';
+  $('#triggerType').value = g?.triggerType === 'weather' ? 'weather' : 'time';
   $('#startTime').value = g?.start || '07:00';
   $('#endTime').value = g?.end || '10:00';
   $('#dailyCount').value = String(g?.dailyCount || 1);
+  $('#weatherCondition').value = g?.weatherCondition || 'cold';
   setMessageRows(g?.messages || []);
   $('#groupEnabled').checked = g ? !!g.enabled : true;
+  renderTriggerFields();
   $('#groupDialog').showModal();
 }
 function switchTab(id) {
@@ -727,12 +882,20 @@ function switchTab(id) {
 }
 
 function cloudPayload(user, fid) {
+  const weather = state.settings.weather || {};
   return {
     uid: user.uid,
     deviceId: state.push.deviceId,
     fid,
     active: true,
     timezone: state.settings.timezone || 'Asia/Seoul',
+    weather: {
+      latitude: Number.isFinite(Number(weather.latitude)) ? Number(weather.latitude) : null,
+      longitude: Number.isFinite(Number(weather.longitude)) ? Number(weather.longitude) : null,
+      locationUpdatedAt: Number(weather.locationUpdatedAt || 0),
+      coldThreshold: Number(weather.coldThreshold ?? 5),
+      hotThreshold: Number(weather.hotThreshold ?? 28),
+    },
     characters: state.characters.map(c => ({
       id: c.id,
       name: c.name,
@@ -743,9 +906,11 @@ function cloudPayload(user, fid) {
       id: g.id,
       characterId: g.characterId,
       name: g.name,
-      start: g.start,
-      end: g.end,
-      dailyCount: Number(g.dailyCount || 1),
+      triggerType: g.triggerType === 'weather' ? 'weather' : 'time',
+      weatherCondition: g.triggerType === 'weather' ? (g.weatherCondition || 'cold') : '',
+      start: g.triggerType === 'weather' ? '' : g.start,
+      end: g.triggerType === 'weather' ? '' : g.end,
+      dailyCount: g.triggerType === 'weather' ? 1 : Number(g.dailyCount || 1),
       enabled: !!g.enabled,
       messages: Array.isArray(g.messages) ? g.messages : [],
     })),
@@ -831,6 +996,77 @@ function queueCloudSync() {
   cloudSyncTimer = setTimeout(() => syncDeviceToFirestore().catch(e => console.error('Push data sync failed:', e)), 700);
 }
 
+
+function hasSavedLocation() {
+  const w = state.settings.weather || {};
+  return Number.isFinite(Number(w.latitude)) && Number.isFinite(Number(w.longitude));
+}
+
+async function useCurrentLocation() {
+  if (!('geolocation' in navigator)) {
+    toast('이 브라우저에서는 현재 위치를 사용할 수 없어요.');
+    return;
+  }
+
+  const button = $('#useCurrentLocationBtn');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = '위치 확인 중…';
+
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 300000,
+      });
+    });
+
+    // 날씨 확인에 필요한 정도만 저장합니다. 약 100m 단위로 반올림합니다.
+    const latitude = Math.round(position.coords.latitude * 1000) / 1000;
+    const longitude = Math.round(position.coords.longitude * 1000) / 1000;
+
+    state.settings.weather = {
+      ...normalizedWeatherSettings(state.settings),
+      latitude,
+      longitude,
+      locationUpdatedAt: Date.now(),
+    };
+
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (browserTimezone) state.settings.timezone = browserTimezone;
+
+    persist();
+    toast('현재 위치를 저장했어요.');
+  } catch (error) {
+    console.error(error);
+    const message = error?.code === 1
+      ? '위치 권한이 허용되지 않았어요.'
+      : '현재 위치를 확인하지 못했어요. 잠시 뒤 다시 시도해 주세요.';
+    toast(message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+function clearSavedLocation() {
+  if (!hasSavedLocation()) {
+    toast('저장된 위치가 없어요.');
+    return;
+  }
+  if (!confirm('저장된 현재 위치를 지울까요? 날씨 알림은 위치를 다시 저장할 때까지 멈춥니다.')) return;
+
+  state.settings.weather = {
+    ...normalizedWeatherSettings(state.settings),
+    latitude: null,
+    longitude: null,
+    locationUpdatedAt: 0,
+  };
+  persist();
+  toast('저장된 위치를 지웠어요.');
+}
+
 async function syncPush() {
   if (!('serviceWorker' in navigator)) return toast('이 브라우저에서는 알림 연결을 지원하지 않아요.');
   if (!await permission()) return;
@@ -893,6 +1129,21 @@ $('#testBtn').onclick = test;
 $('#runDueBtn').onclick = () => checkDue(true);
 $('#addCharacterBtn').onclick = () => openCharacter();
 $('#addGroupBtn').onclick = () => openGroup();
+$('#triggerType').onchange = () => {
+  const before = $('#groupName').value.trim();
+  renderTriggerFields();
+  if ($('#triggerType').value === 'weather' && !before) {
+    $('#groupName').value = weatherConditionLabel($('#weatherCondition').value);
+  }
+};
+$('#weatherCondition').onchange = () => {
+  renderTriggerFields();
+  const current = $('#groupName').value.trim();
+  const known = ['추울 때', '더울 때', '비가 오는 날'];
+  if (!current || known.includes(current)) {
+    $('#groupName').value = weatherConditionLabel($('#weatherCondition').value);
+  }
+};
 
 $('#oocBtn').onclick = openOocDialog;
 $('#closeOocBtn').onclick = closeOocDialog;
@@ -1001,6 +1252,7 @@ $('#characterForm').onsubmit = e => {
   } else {
     const c = { id: uid(), name, enabled, avatar: pendingAvatar };
     state.characters.push(c);
+    state.groups.push(...weatherGroupDefaults(c.id));
     state.selectedCharacterId = c.id;
   }
   const savedCharacter = id
@@ -1033,17 +1285,37 @@ $('#groupForm').onsubmit = e => {
   e.preventDefault();
   const ms = getMessageRows();
   if (!ms.length) return toast('대사를 한 개 이상 입력해 주세요.');
+
   const id = $('#groupId').value;
+  const triggerType = $('#triggerType').value === 'weather' ? 'weather' : 'time';
+
+  if (triggerType === 'weather' && !hasSavedLocation()) {
+    toast('날씨 알림을 사용하려면 설정에서 현재 위치를 먼저 저장해 주세요.');
+    return;
+  }
+
   const d = {
-    id: id || uid(), characterId: state.selectedCharacterId,
-    name: $('#groupName').value.trim(), start: $('#startTime').value, end: $('#endTime').value,
-    dailyCount: +$('#dailyCount').value, enabled: $('#groupEnabled').checked, messages: ms, sentToday: [],
+    id: id || uid(),
+    characterId: state.selectedCharacterId,
+    name: $('#groupName').value.trim(),
+    triggerType,
+    weatherCondition: triggerType === 'weather' ? $('#weatherCondition').value : '',
+    start: triggerType === 'time' ? ($('#startTime').value || '07:00') : '',
+    end: triggerType === 'time' ? ($('#endTime').value || '10:00') : '',
+    dailyCount: triggerType === 'weather' ? 1 : +$('#dailyCount').value,
+    enabled: $('#groupEnabled').checked,
+    messages: ms,
+    sentToday: [],
   };
+
   if (id) {
     const i = state.groups.findIndex(g => g.id === id);
     d.sentToday = state.groups[i]?.sentToday || [];
     state.groups[i] = d;
-  } else state.groups.push(d);
+  } else {
+    state.groups.push(d);
+  }
+
   persist();
   $('#groupDialog').close();
   toast('저장했어요.');
@@ -1074,6 +1346,18 @@ $('#avoidRecent').onchange = e => { state.settings.avoidRecent = e.target.checke
 $('#recentCount').onchange = e => { state.settings.recentCount = Math.max(0, Math.min(20, +e.target.value || 0)); persist(); };
 $('#checkInterval').onchange = e => { state.settings.checkInterval = +e.target.value; persist(); startTimer(); };
 $('#timezone').onchange = e => { state.settings.timezone = e.target.value.trim() || 'Asia/Seoul'; persist(); };
+$('#useCurrentLocationBtn').onclick = useCurrentLocation;
+$('#clearLocationBtn').onclick = clearSavedLocation;
+$('#coldThreshold').onchange = e => {
+  const value = Math.max(-30, Math.min(20, Number(e.target.value ?? 5)));
+  state.settings.weather = { ...normalizedWeatherSettings(state.settings), coldThreshold: value };
+  persist();
+};
+$('#hotThreshold').onchange = e => {
+  const value = Math.max(15, Math.min(45, Number(e.target.value ?? 28)));
+  state.settings.weather = { ...normalizedWeatherSettings(state.settings), hotThreshold: value };
+  persist();
+};
 $('#subscribePushBtn').onclick = syncPush;
 $('#unsubscribePushBtn').onclick = unsubscribePush;
 

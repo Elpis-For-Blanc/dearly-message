@@ -1,4 +1,4 @@
-const CACHE = 'dearly-message-20260929-10';
+const CACHE = 'dearly-message-weather-20260930-1';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -128,6 +128,9 @@ try {
         badge: './icon-192.png',
         tag: d.tag || `dear-${Date.now()}`,
         data: d,
+        silent: false,
+        renotify: true,
+        vibrate: [180, 80, 180],
       }),
     ]);
   });
