@@ -1,6 +1,88 @@
-const CACHE='dear-message-v1';
-const ASSETS=['./','./index.html','./style.css','./app.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
-self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting()});
-self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return res}).catch(()=>caches.match('./index.html'))))});
-self.addEventListener('notificationclick',e=>{e.notification.close();e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{for(const c of list){if('focus'in c)return c.focus()}if(clients.openWindow)return clients.openWindow('./')}))});
+const CACHE = 'dear-message-v2-firebase-20260929';
+const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))));
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+      if (new URL(e.request.url).origin === self.location.origin) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+      }
+      return res;
+    }).catch(() => caches.match('./index.html')))
+  );
+});
+
+function logPush(d) {
+  return new Promise((resolve, reject) => {
+    const q = indexedDB.open('dear-message-v2', 1);
+    q.onupgradeneeded = () => q.result.createObjectStore('pushlog', { keyPath: 'id' });
+    q.onerror = () => reject(q.error);
+    q.onsuccess = () => {
+      const db = q.result, tx = db.transaction('pushlog', 'readwrite');
+      tx.objectStore('pushlog').put({
+        id: crypto.randomUUID(),
+        ts: Date.now(),
+        title: d.title || '새 메시지',
+        message: d.body || '',
+        data: d,
+      });
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+
+// Firebase가 notificationclick을 덮지 않도록 먼저 등록.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) if ('focus' in c) return c.focus();
+    return self.clients.openWindow ? self.clients.openWindow('./') : undefined;
+  }));
+});
+
+importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: 'AIzaSyDxHoReGJVBh-574v4cYSpq2GiPgs3TaOg',
+  authDomain: 'dearly-message.firebaseapp.com',
+  projectId: 'dearly-message',
+  storageBucket: 'dearly-message.firebasestorage.app',
+  messagingSenderId: '864968097858',
+  appId: '1:864968097858:web:e60e44cd381ca3a7e9addb',
+  measurementId: 'G-T79KM8496B',
+});
+
+try {
+  const messaging = firebase.messaging();
+  messaging.onBackgroundMessage(payload => {
+    const d = payload.data || {};
+    const title = payload.notification?.title || d.title || '새 메시지';
+    const body = payload.notification?.body || d.body || '';
+    return Promise.all([
+      logPush({ ...d, title, body }),
+      self.registration.showNotification(title, {
+        body,
+        icon: d.icon || './icon-192.png',
+        badge: './icon-192.png',
+        tag: d.tag || `dear-${Date.now()}`,
+        data: d,
+      }),
+    ]);
+  });
+} catch (e) {
+  console.error('Firebase Messaging service worker init failed:', e);
+}
