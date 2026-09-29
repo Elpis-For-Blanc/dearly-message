@@ -464,6 +464,61 @@ function openCharacter(c = null) {
 }
 function renderAvatarPreview() { $('#avatarPreviewWrap').innerHTML = pendingAvatar ? `<img src="${pendingAvatar}" alt="프로필 미리보기">` : ''; }
 
+
+function buildOocPrompt() {
+  const character = getChar();
+  const characterName = character?.name?.trim() || '현재 캐릭터';
+
+  return `[OOC]
+${characterName}의 기존 성격, 말투, 관계, 호칭, 설정을 유지한 채 Dearly Message에 넣을 짧은 문자 메시지를 작성해 주세요.
+
+아래 상황별로 각각 10개씩 작성해 주세요.
+1. 아침
+2. 점심
+3. 저녁
+4. 밤
+5. 새벽
+6. 추울 때
+7. 더울 때
+8. 비가 오는 날
+
+작성 규칙
+- 각 메시지는 실제 메신저나 문자처럼 자연스럽고 간략하게 작성해 주세요.
+- 한 메시지는 1~2문장 정도로 짧게 작성해 주세요.
+- 상황 설명이나 행동 서술 없이, 캐릭터가 상대에게 직접 보내는 메시지만 작성해 주세요.
+- 같은 문장이나 표현이 반복되지 않도록 해 주세요.
+- 지나치게 문학적이거나 장황한 서술은 피하고 캐릭터의 평소 말투와 관계성을 가장 우선해 주세요.
+- 각 상황은 제목을 붙이고 1~10번으로 구분해 주세요.
+- 이모티콘, 말줄임표, 애칭 등은 해당 캐릭터가 평소 사용하는 경우에만 자연스럽게 사용해 주세요.
+- 결과에는 메시지 외의 해설이나 추가 설명을 붙이지 말아 주세요.
+[/OOC]`;
+}
+
+function openOocDialog() {
+  $('#oocText').value = buildOocPrompt();
+  $('#oocDialog').showModal();
+}
+
+async function copyOocPrompt() {
+  const text = $('#oocText').value.trim();
+  if (!text) return toast('복사할 OOC 내용이 없어요.');
+
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('OOC를 복사했어요.');
+  } catch (_) {
+    const ta = $('#oocText');
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toast('OOC를 복사했어요.');
+    } catch (err) {
+      toast('자동 복사가 어려워요. 내용을 길게 눌러 직접 복사해 주세요.');
+    }
+  }
+}
+
 function makeMessageRow(value = '') {
   const row = document.createElement('div');
   row.className = 'message-input-row';
@@ -692,6 +747,9 @@ $$('[data-close]').forEach(b => b.onclick = () => $('#' + b.dataset.close).close
 $('#permissionBtn').onclick = permission;
 $('#testBtn').onclick = test;
 $('#runDueBtn').onclick = () => checkDue(true);
+$('#oocBtn').onclick = openOocDialog;
+$('#resetOocBtn').onclick = () => { $('#oocText').value = buildOocPrompt(); };
+$('#copyOocBtn').onclick = copyOocPrompt;
 $('#addCharacterBtn').onclick = () => openCharacter();
 $('#addGroupBtn').onclick = () => openGroup();
 
@@ -864,7 +922,7 @@ $('#unsubscribePushBtn').onclick = unsubscribePush;
 $('#exportBtn').onclick = () => {
   const b = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), a = document.createElement('a');
   a.href = URL.createObjectURL(b);
-  a.download = `dear-message-v2-backup-${todayKey()}.json`;
+  a.download = `dearly-message-backup-${todayKey()}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 };

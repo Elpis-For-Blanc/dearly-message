@@ -116,3 +116,73 @@ button,input,textarea,select{font:inherit} button{cursor:pointer}.app-shell{widt
     height:36px;
   }
 }
+
+
+/* AI 채팅용 OOC */
+.section-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.ooc-dialog-form{
+  width:min(720px, calc(100vw - 32px));
+}
+.ooc-guide{
+  margin:0 0 12px;
+  padding:11px 13px;
+  border:1px solid #f2d9e5;
+  border-radius:12px;
+  background:#fff7fb;
+  color:#7d5f6e;
+  font-size:13px;
+  line-height:1.65;
+}
+.ooc-textarea{
+  width:100%;
+  min-height:430px;
+  resize:vertical;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+  color:var(--text);
+  padding:15px;
+  font:inherit;
+  font-size:13px;
+  line-height:1.7;
+  outline:none;
+}
+.ooc-textarea:focus{
+  border-color:#df7eaa;
+  box-shadow:0 0 0 3px #fde7f1;
+}
+.ooc-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  margin-top:9px;
+  color:var(--muted);
+  font-size:12px;
+}
+.ooc-meta strong{
+  flex:0 0 auto;
+  color:#a7567d;
+}
+@media(max-width:700px){
+  .section-actions{
+    width:100%;
+    justify-content:stretch;
+  }
+  .section-actions button{
+    flex:1 1 auto;
+  }
+  .ooc-textarea{
+    min-height:54vh;
+    font-size:12.5px;
+  }
+  .ooc-meta{
+    align-items:flex-start;
+  }
+}
