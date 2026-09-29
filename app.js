@@ -465,6 +465,207 @@ function openCharacter(c = null) {
 function renderAvatarPreview() { $('#avatarPreviewWrap').innerHTML = pendingAvatar ? `<img src="${pendingAvatar}" alt="프로필 미리보기">` : ''; }
 
 
+
+const OOC_CATEGORIES = [
+  { key: 'morning', label: '아침' },
+  { key: 'lunch', label: '점심' },
+  { key: 'evening', label: '저녁' },
+  { key: 'night', label: '밤' },
+  { key: 'dawn', label: '새벽' },
+  { key: 'cold', label: '추울 때' },
+  { key: 'hot', label: '더울 때' },
+  { key: 'rain', label: '비가 오는 날' },
+];
+
+function makeOocPrompt(label) {
+  const character = selectedChar();
+  const characterName = character?.name?.trim() || '현재 캐릭터';
+
+  return `[OOC]
+${characterName}의 기존 성격, 말투, 관계, 호칭, 설정을 그대로 유지해 주세요.
+
+상황: ${label}
+
+Dearly Message에 등록해서 사용할 수 있는 짧은 문자 메시지를 10개 이상 작성해 주세요.
+
+작성 규칙
+- 반드시 최소 10개 이상 작성해 주세요.
+- 실제 메신저나 문자처럼 자연스럽고 간략하게 작성해 주세요.
+- 각 메시지는 1~2문장 정도의 짧은 문자 메시지로 작성해 주세요.
+- 캐릭터가 상대에게 직접 보내는 메시지만 작성해 주세요.
+- 행동 묘사, 상황 설명, 지문은 넣지 말아 주세요.
+- ${label} 상황에 자연스럽게 어울리는 내용으로 작성해 주세요.
+- 같은 문장이나 비슷한 표현이 반복되지 않게 다양하게 작성해 주세요.
+- 캐릭터의 평소 말투, 성격, 호칭과 상대와의 관계성을 가장 우선해 주세요.
+- 지나치게 문학적이거나 장황한 표현은 피해주세요.
+- 이모티콘, 말줄임표, 애칭 등은 해당 캐릭터가 평소 사용하는 경우에만 자연스럽게 사용해 주세요.
+- 1번부터 번호를 붙여 출력해 주세요.
+- 메시지 외의 해설이나 부가 설명은 붙이지 말아 주세요.
+[/OOC]`;
+}
+
+function renderOocCategories(forceReset = false) {
+  const list = $('#oocCategoryList');
+  if (!list) return;
+
+  if (!forceReset && list.children.length) return;
+  list.innerHTML = '';
+
+  OOC_CATEGORIES.forEach(category => {
+    const card = document.createElement('section');
+    card.className = 'ooc-category-card';
+    card.dataset.category = category.key;
+
+    const head = document.createElement('div');
+    head.className = 'ooc-category-head';
+
+    const titleWrap = document.createElement('div');
+
+    const title = document.createElement('strong');
+    title.textContent = category.label;
+
+    const count = document.createElement('small');
+    count.textContent = '10개 이상';
+
+    titleWrap.append(title, count);
+
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'mini-btn ooc-copy-one';
+    copyButton.dataset.copyCategory = category.key;
+    copyButton.textContent = `${category.label} 복사`;
+
+    head.append(titleWrap, copyButton);
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'ooc-category-text';
+    textarea.spellcheck = false;
+    textarea.dataset.oocCategory = category.key;
+    textarea.value = makeOocPrompt(category.label);
+
+    card.append(head, textarea);
+    list.appendChild(card);
+  });
+}
+
+function openOocDialog() {
+  const dialog = $('#oocDialog');
+  if (!dialog) {
+    toast('OOC 창을 불러오지 못했어요.');
+    return;
+  }
+
+  renderOocCategories(false);
+
+  if (!dialog.open) {
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', '');
+    }
+  }
+}
+
+function closeOocDialog() {
+  const dialog = $('#oocDialog');
+  if (!dialog) return;
+
+  if (typeof dialog.close === 'function' && dialog.open) {
+    dialog.close();
+  } else {
+    dialog.removeAttribute('open');
+  }
+}
+
+async function copyOocText(textarea, button) {
+  const value = textarea?.value?.trim();
+  if (!value) {
+    toast('복사할 OOC 내용이 없어요.');
+    return;
+  }
+
+  let copied = false;
+
+  try {
+    await navigator.clipboard.writeText(value);
+    copied = true;
+  } catch (_) {
+    try {
+      textarea.focus();
+      textarea.select();
+      copied = document.execCommand('copy');
+    } catch (_) {}
+  }
+
+  if (copied) {
+    toast('OOC를 복사했어요.');
+    if (button) {
+      const original = button.textContent;
+      button.textContent = '복사됨 ✓';
+      setTimeout(() => {
+        button.textContent = original;
+      }, 1300);
+    }
+  } else {
+    toast('자동 복사가 어려워요. 내용을 길게 눌러 직접 복사해 주세요.');
+  }
+}
+
+async function copyAllOoc() {
+  renderOocCategories(false);
+
+  const texts = OOC_CATEGORIES.map(category => {
+    const textarea = document.querySelector(
+      `[data-ooc-category="${category.key}"]`
+    );
+    return textarea?.value?.trim() || '';
+  }).filter(Boolean);
+
+  if (!texts.length) {
+    toast('복사할 OOC 내용이 없어요.');
+    return;
+  }
+
+  const temporary = document.createElement('textarea');
+  temporary.value = texts.join('\n\n');
+  temporary.style.position = 'fixed';
+  temporary.style.opacity = '0';
+  document.body.appendChild(temporary);
+
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(temporary.value);
+    copied = true;
+  } catch (_) {
+    try {
+      temporary.focus();
+      temporary.select();
+      copied = document.execCommand('copy');
+    } catch (_) {}
+  }
+
+  temporary.remove();
+
+  if (copied) {
+    toast('전체 OOC를 복사했어요.');
+    const button = $('#copyAllOocBtn');
+    if (button) {
+      const original = button.textContent;
+      button.textContent = '전체 복사됨 ✓';
+      setTimeout(() => {
+        button.textContent = original;
+      }, 1300);
+    }
+  } else {
+    toast('자동 복사가 어려워요. 종류별 복사 버튼을 이용해 주세요.');
+  }
+}
+
+function resetOocPrompts() {
+  renderOocCategories(true);
+  toast('OOC를 기본값으로 되돌렸어요.');
+}
+
 function makeMessageRow(value = '') {
   const row = document.createElement('div');
   row.className = 'message-input-row';
@@ -695,6 +896,23 @@ $('#testBtn').onclick = test;
 $('#runDueBtn').onclick = () => checkDue(true);
 $('#addCharacterBtn').onclick = () => openCharacter();
 $('#addGroupBtn').onclick = () => openGroup();
+
+$('#oocBtn').onclick = openOocDialog;
+$('#closeOocBtn').onclick = closeOocDialog;
+$('#resetOocBtn').onclick = resetOocPrompts;
+$('#copyAllOocBtn').onclick = copyAllOoc;
+
+$('#oocCategoryList').onclick = e => {
+  const button = e.target.closest('[data-copy-category]');
+  if (!button) return;
+
+  const key = button.dataset.copyCategory;
+  const textarea = document.querySelector(
+    `[data-ooc-category="${key}"]`
+  );
+
+  copyOocText(textarea, button);
+};
 
 
 $('#addMessageBtn').onclick = () => addMessageRow('', true);
