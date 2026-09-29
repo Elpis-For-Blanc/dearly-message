@@ -478,11 +478,8 @@ const OOC_CATEGORIES = [
 ];
 
 function makeOocPrompt(label) {
-  const character = selectedChar();
-  const characterName = character?.name?.trim() || '현재 캐릭터';
-
   return `OOC: 현재 롤플레잉 중단.
-NPC인 ${characterName}가 PC에게 보내는 문자 메시지 내용을 작성해 주세요.
+NPC가 PC에게 보내는 문자 메시지 내용을 작성해 주세요.
 
 상황: ${label}
 
