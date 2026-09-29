@@ -1,4 +1,4 @@
-const CACHE = 'dearly-message-20260929-8';
+const CACHE = 'dearly-message-20260929-9';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
