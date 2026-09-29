@@ -778,7 +778,18 @@ $('#installBtn').onclick = async () => {
 };
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').then(() => ensureFirebase()).catch(console.error);
+  let reloadingForUpdate = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    location.reload();
+  });
+
+  navigator.serviceWorker.register('./sw.js').then(async reg => {
+    try { await reg.update(); } catch (_) {}
+    await ensureFirebase();
+  }).catch(console.error);
 }
 resetDailyIfNeeded();
 renderAll();

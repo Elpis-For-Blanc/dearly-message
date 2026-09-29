@@ -1,4 +1,4 @@
-const CACHE = 'dear-message-avatarfix-20260929-1';
+const CACHE = 'dearly-message-20260929-3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,14 +13,36 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+
+  const url = new URL(e.request.url);
+  const sameOrigin = url.origin === self.location.origin;
+  const isAppShell = sameOrigin && (
+    e.request.mode === 'navigate' ||
+    /\.(?:html|js|css|webmanifest)$/.test(url.pathname)
+  );
+
+  if (isAppShell) {
+    // 새 문구와 코드가 이전 캐시에 가로막히지 않도록 앱 파일은 네트워크 우선.
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return res;
+      }).catch(() =>
+        caches.match(e.request).then(r => r || caches.match('./index.html'))
+      )
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request).then(res => {
-      if (new URL(e.request.url).origin === self.location.origin) {
+      if (sameOrigin) {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
       }
       return res;
-    }).catch(() => caches.match('./index.html')))
+    }))
   );
 });
 
