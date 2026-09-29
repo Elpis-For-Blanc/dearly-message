@@ -26,4 +26,81 @@
   <p class="message-editor-tip">Enter를 누르면 다음 대사 칸이 바로 추가돼요.</p>
 </div><label class="switch-row"><span>이 그룹 사용</span><input id="groupEnabled" type="checkbox" checked></label><div class="dialog-actions"><button type="button" class="ghost-btn" data-close="groupDialog">취소</button><button class="primary-btn" type="submit">저장</button></div></form></dialog>
 <dialog id="oocDialog"><form method="dialog" class="dialog-form ooc-dialog-form"><div class="dialog-head"><div><p class="eyebrow">AI CHAT OOC</p><h3>AI 채팅용 OOC</h3></div><button type="button" class="icon-btn" data-close="oocDialog">×</button></div><p class="ooc-guide">아래 내용은 기본 예시입니다. 캐릭터와 관계에 맞게 수정해서 자유롭게 사용하셔도 됩니다.</p><textarea id="oocText" class="ooc-textarea" spellcheck="false"></textarea><div class="ooc-meta"><span>아침 · 점심 · 저녁 · 밤 · 새벽 · 추울 때 · 더울 때 · 비가 오는 날</span><strong>각 10개</strong></div><div class="dialog-actions"><button type="button" id="resetOocBtn" class="ghost-btn">기본값으로 되돌리기</button><button type="button" id="copyOocBtn" class="primary-btn">OOC 복사하기</button></div></form></dialog>
-<div id="toast" class="toast" role="status"></div><script type="module" src="./app.js"></script></body></html>
+<div id="toast" class="toast" role="status"></div>
+<script>
+(() => {
+  const DEFAULT_OOC = `[OOC]
+캐릭터의 기존 성격, 말투, 관계, 호칭, 설정을 유지한 채 Dearly Message에 넣을 짧은 문자 메시지를 작성해 주세요.
+
+아래 상황별로 각각 10개씩 작성해 주세요.
+1. 아침
+2. 점심
+3. 저녁
+4. 밤
+5. 새벽
+6. 추울 때
+7. 더울 때
+8. 비가 오는 날
+
+작성 규칙
+- 각 메시지는 실제 메신저나 문자처럼 자연스럽고 간략하게 작성해 주세요.
+- 한 메시지는 1~2문장 정도로 짧게 작성해 주세요.
+- 상황 설명이나 행동 서술 없이, 캐릭터가 상대에게 직접 보내는 메시지만 작성해 주세요.
+- 같은 문장이나 표현이 반복되지 않도록 해 주세요.
+- 지나치게 문학적이거나 장황한 서술은 피하고 캐릭터의 평소 말투와 관계성을 가장 우선해 주세요.
+- 각 상황은 제목을 붙이고 1~10번으로 구분해 주세요.
+- 이모티콘, 말줄임표, 애칭 등은 해당 캐릭터가 평소 사용하는 경우에만 자연스럽게 사용해 주세요.
+- 결과에는 메시지 외의 해설이나 추가 설명을 붙이지 말아 주세요.
+[/OOC]`;
+
+  const byId = id => document.getElementById(id);
+
+  function openOocFallback() {
+    const dialog = byId('oocDialog');
+    const text = byId('oocText');
+    if (!dialog || !text) return;
+
+    if (!text.value.trim()) text.value = DEFAULT_OOC;
+
+    if (!dialog.open) {
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else dialog.setAttribute('open', '');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const openBtn = byId('oocBtn');
+    const resetBtn = byId('resetOocBtn');
+    const copyBtn = byId('copyOocBtn');
+    const dialog = byId('oocDialog');
+
+    openBtn?.addEventListener('click', openOocFallback);
+
+    resetBtn?.addEventListener('click', () => {
+      const text = byId('oocText');
+      if (text) text.value = DEFAULT_OOC;
+    });
+
+    copyBtn?.addEventListener('click', async () => {
+      const text = byId('oocText');
+      if (!text?.value.trim()) return;
+
+      try {
+        await navigator.clipboard.writeText(text.value);
+      } catch (_) {
+        text.focus();
+        text.select();
+        try { document.execCommand('copy'); } catch (_) {}
+      }
+    });
+
+    dialog?.querySelectorAll('[data-close="oocDialog"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (typeof dialog.close === 'function') dialog.close();
+        else dialog.removeAttribute('open');
+      });
+    });
+  });
+})();
+</script>
+<script type="module" src="./app.js"></script></body></html>

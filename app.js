@@ -495,8 +495,12 @@ ${characterName}의 기존 성격, 말투, 관계, 호칭, 설정을 유지한 �
 }
 
 function openOocDialog() {
+  const dialog = $('#oocDialog');
   $('#oocText').value = buildOocPrompt();
-  $('#oocDialog').showModal();
+  if (!dialog.open) {
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
 }
 
 async function copyOocPrompt() {
