@@ -1,4 +1,4 @@
-const CACHE = 'dear-message-v2-firebase-20260929';
+const CACHE = 'dear-message-avatarfix-20260929-1';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -53,6 +53,30 @@ self.addEventListener('notificationclick', e => {
   }));
 });
 
+
+const AVATAR_DB = 'dear-message-avatars';
+const AVATAR_STORE = 'avatars';
+
+function getCachedAvatar(characterId) {
+  if (!characterId) return Promise.resolve('');
+  return new Promise(resolve => {
+    const req = indexedDB.open(AVATAR_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE);
+    };
+    req.onerror = () => resolve('');
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction(AVATAR_STORE, 'readonly');
+      const get = tx.objectStore(AVATAR_STORE).get(characterId);
+      get.onsuccess = () => resolve(get.result || '');
+      get.onerror = () => resolve('');
+      tx.oncomplete = () => db.close();
+    };
+  });
+}
+
 importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js');
 
@@ -68,15 +92,17 @@ firebase.initializeApp({
 
 try {
   const messaging = firebase.messaging();
-  messaging.onBackgroundMessage(payload => {
+  messaging.onBackgroundMessage(async payload => {
     const d = payload.data || {};
     const title = payload.notification?.title || d.title || '새 메시지';
     const body = payload.notification?.body || d.body || '';
+    const cachedAvatar = await getCachedAvatar(d.characterId);
+    const icon = cachedAvatar || d.icon || './icon-192.png';
     return Promise.all([
       logPush({ ...d, title, body }),
       self.registration.showNotification(title, {
         body,
-        icon: d.icon || './icon-192.png',
+        icon,
         badge: './icon-192.png',
         tag: d.tag || `dear-${Date.now()}`,
         data: d,

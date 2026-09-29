@@ -161,6 +161,113 @@ function toast(m) {
   t._x = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
+
+const AVATAR_DB = 'dear-message-avatars';
+const AVATAR_STORE = 'avatars';
+
+function openAvatarDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(AVATAR_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(AVATAR_STORE)) db.createObjectStore(AVATAR_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function cacheAvatar(characterId, dataUrl) {
+  if (!characterId || !dataUrl?.startsWith('data:image/')) return;
+  try {
+    const db = await openAvatarDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(AVATAR_STORE, 'readwrite');
+      tx.objectStore(AVATAR_STORE).put(dataUrl, characterId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('Avatar cache failed:', e);
+  }
+}
+
+async function removeCachedAvatar(characterId) {
+  if (!characterId) return;
+  try {
+    const db = await openAvatarDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(AVATAR_STORE, 'readwrite');
+      tx.objectStore(AVATAR_STORE).delete(characterId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) {
+    console.warn('Avatar cache delete failed:', e);
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function squareAvatarFromDataUrl(dataUrl, size = 256) {
+  const img = await loadImage(dataUrl);
+  const sw = img.naturalWidth || img.width;
+  const sh = img.naturalHeight || img.height;
+  const side = Math.min(sw, sh);
+  const sx = Math.max(0, (sw - side) / 2);
+  const sy = Math.max(0, (sh - side) / 2);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/png');
+}
+
+async function squareAvatarFromFile(file, size = 256) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+  return squareAvatarFromDataUrl(dataUrl, size);
+}
+
+async function normalizeAndCacheAvatars() {
+  let changed = false;
+  for (const c of state.characters) {
+    if (!c.avatar?.startsWith('data:image/')) continue;
+    try {
+      const squared = await squareAvatarFromDataUrl(c.avatar, 256);
+      if (squared !== c.avatar) {
+        c.avatar = squared;
+        changed = true;
+      }
+      await cacheAvatar(c.id, c.avatar);
+    } catch (e) {
+      console.warn('Avatar normalization failed:', e);
+    }
+  }
+  if (changed) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderAll();
+    if (state.push.connected && state.push.fid) queueCloudSync();
+  }
+}
+
 async function notify(g, message) {
   const c = state.characters.find(x => x.id === g.characterId) || selectedChar();
   const opt = {
@@ -305,9 +412,6 @@ function renderHome() {
   b.innerHTML = '';
   active.forEach(g => b.appendChild(groupCard(g, false)));
   if (!active.length) b.innerHTML = '<div class="empty">메시지 그룹에 대사를 추가하고 활성화해줘.</div>';
-  $('#pushSummary').textContent = state.push.connected
-    ? 'Firebase Push가 연결되어 있어. 앱을 닫아도 서버 예약 발송을 받을 준비가 됐어.'
-    : '페이지가 열려 있을 때는 로컬 알림을 사용할 수 있어. 앱을 닫은 뒤에도 받으려면 설정에서 Firebase Push를 연결해줘.';
 }
 function renderCharacters() {
   const b = $('#characterList');
@@ -344,7 +448,7 @@ function renderSettings() {
   $('#checkInterval').value = String(state.settings.checkInterval);
   $('#timezone').value = state.settings.timezone || 'Asia/Seoul';
   const e = $('#pushState');
-  e.textContent = state.push.connected ? '이 기기 Firebase Push 연결됨' : '연결 안 됨';
+  e.textContent = state.push.connected ? '이 기기 알림 연결됨' : '연결 안 됨';
   e.className = state.push.connected ? 'muted ok' : 'muted';
 }
 function renderAll() { renderPermission(); renderHome(); renderCharacters(); renderGroups(); renderHistory(); renderSettings(); }
@@ -453,9 +557,10 @@ async function ensureFirebase() {
         const body = payload.notification?.body || data.body || '';
         try {
           const reg = await navigator.serviceWorker.ready;
+          const localCharacter = state.characters.find(c => c.id === data.characterId);
           await reg.showNotification(title, {
             body,
-            icon: data.icon || './icon-192.png',
+            icon: localCharacter?.avatar || data.icon || './icon-192.png',
             badge: './icon-192.png',
             tag: data.tag || `dear-${Date.now()}`,
             data,
@@ -481,11 +586,11 @@ function queueCloudSync() {
 }
 
 async function syncPush() {
-  if (!('serviceWorker' in navigator)) return toast('이 브라우저는 백그라운드 Push를 지원하지 않아.');
+  if (!('serviceWorker' in navigator)) return toast('이 브라우저에서는 알림 연결을 지원하지 않아.');
   if (!await permission()) return;
   try {
     const { messaging } = await ensureFirebase();
-    if (!messaging) return toast('이 브라우저에서는 Firebase Push를 사용할 수 없어.');
+    if (!messaging) return toast('이 브라우저에서는 알림 연결을 사용할 수 없어.');
     const reg = await navigator.serviceWorker.ready;
 
     const fidPromise = new Promise(resolve => {
@@ -510,10 +615,10 @@ async function syncPush() {
     persist();
     await syncDeviceToFirestore();
     startTimer();
-    toast('Firebase Push를 연결했어.');
+    toast('알림을 연결했어.');
   } catch (e) {
     console.error(e);
-    toast('Push 연결에 실패했어. Firebase 설정과 Firestore 규칙을 확인해줘.');
+    toast('알림 연결에 실패했어. 잠시 뒤 다시 시도해줘.');
   }
 }
 
@@ -526,7 +631,7 @@ async function unsubscribePush() {
     state.push.connected = false;
     persist();
     startTimer();
-    toast('Push 연결을 해제했어.');
+    toast('알림 연결을 해제했어.');
   } catch (e) {
     console.error(e);
     toast('연결 해제 중 오류가 났어.');
@@ -543,13 +648,17 @@ $('#runDueBtn').onclick = () => checkDue(true);
 $('#addCharacterBtn').onclick = () => openCharacter();
 $('#addGroupBtn').onclick = () => openGroup();
 
-$('#avatarFile').onchange = e => {
+$('#avatarFile').onchange = async e => {
   const f = e.target.files?.[0];
   if (!f) return;
-  if (f.size > 2.5 * 1024 * 1024) return toast('이미지는 2.5MB 이하를 권장해.');
-  const r = new FileReader();
-  r.onload = () => { pendingAvatar = r.result; renderAvatarPreview(); };
-  r.readAsDataURL(f);
+  if (f.size > 10 * 1024 * 1024) return toast('이미지는 10MB 이하로 선택해줘.');
+  try {
+    pendingAvatar = await squareAvatarFromFile(f, 256);
+    renderAvatarPreview();
+  } catch (err) {
+    console.error(err);
+    toast('프로필 이미지를 불러오지 못했어.');
+  }
 };
 
 $('#characterForm').onsubmit = e => {
@@ -563,7 +672,12 @@ $('#characterForm').onsubmit = e => {
     state.characters.push(c);
     state.selectedCharacterId = c.id;
   }
+  const savedCharacter = id
+    ? state.characters.find(x => x.id === id)
+    : state.characters.find(x => x.id === state.selectedCharacterId);
   persist();
+  if (savedCharacter?.avatar?.startsWith('data:image/')) cacheAvatar(savedCharacter.id, savedCharacter.avatar);
+  else if (savedCharacter) removeCachedAvatar(savedCharacter.id);
   $('#characterDialog').close();
   toast('캐릭터를 저장했어.');
 };
@@ -670,3 +784,7 @@ resetDailyIfNeeded();
 renderAll();
 startTimer();
 consumePushLog();
+
+
+// 기존 프로필도 한 번 1:1로 정리해 알림에서 눌리지 않게 유지.
+normalizeAndCacheAvatars().catch(console.warn);
